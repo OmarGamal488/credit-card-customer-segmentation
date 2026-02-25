@@ -1,0 +1,645 @@
+\documentclass[12pt, a4paper]{article}
+
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{multirow}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{parskip}
+\usepackage{mdframed}
+\usepackage{tabularx}
+
+\definecolor{insightbg}{RGB}{232, 244, 255}
+\definecolor{insightborder}{RGB}{30, 120, 200}
+\definecolor{titlegray}{RGB}{45, 55, 72}
+\definecolor{accent}{RGB}{30, 120, 200}
+
+\newmdenv[
+  backgroundcolor=insightbg,
+  linecolor=insightborder,
+  linewidth=2pt,
+  leftline=true, rightline=false, topline=false, bottomline=false,
+  innerleftmargin=10pt, innerrightmargin=8pt,
+  innertopmargin=6pt, innerbottommargin=6pt,
+  skipabove=8pt, skipbelow=8pt
+]{insightbox}
+
+\titleformat{\section}{\large\bfseries\color{titlegray}}{}{0em}{\thesection\quad}
+\titleformat{\subsection}{\normalsize\bfseries\color{titlegray}}{}{0em}{\thesubsection\quad}
+
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{\textcolor{gray}{\small Customer Segmentation Report}}
+\lhead{\textcolor{gray}{\small Machine Learning 2 Project}}
+\rfoot{\thepage}
+
+\graphicspath{{figures/}}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=accent,
+  urlcolor=accent,
+  citecolor=accent,
+  pdftitle={Customer Segmentation Report},
+  pdfauthor={Omar Gamal ElKady}
+}
+
+\begin{document}
+
+\begin{titlepage}
+  \centering
+  \vspace*{2cm}
+  {\huge\bfseries\color{titlegray} Customer Segmentation\\[0.4em]
+  for Credit Card Customers\par}
+  \vspace{1cm}
+  \rule{\textwidth}{1pt}
+  \vspace{0.5cm}
+  {\large Machine Learning 2 --- Project Report\par}
+  \vspace{2cm}
+  {\normalsize
+    \textbf{Dataset:} CC General --- Credit Card Customer Behaviour\\[0.3em]
+    \textbf{Algorithms:} K-Means, Gaussian Mixture Model, PCA, t-SNE
+  }
+  \vspace{1cm}
+  {\large\bfseries Omar Gamal ElKady\par}
+  \vspace{0.3cm}
+  {\normalsize February 2026\par}
+  \vfill
+  \rule{\textwidth}{0.5pt}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+\section{Executive Summary}
+
+This report documents the end-to-end implementation of an unsupervised machine
+learning pipeline that segments 8{,}950 credit card customers into seven
+behaviourally distinct groups. The analysis follows five phases prescribed by the
+project specification: data exploration and preprocessing, determination of the
+optimal cluster count, customer segmentation, visualisation and analysis, and
+actionable business recommendations.
+
+\medskip
+\noindent Key outcomes are summarised below.
+
+\begin{center}
+\begin{tabular}{lp{9cm}}
+\toprule
+\textbf{Phase} & \textbf{Key Outcome} \\
+\midrule
+Data Exploration    & 8{,}950 customers, 17 numeric features; 2 features with missingness;
+                      strong right-skew; high collinearity in purchase-related features. \\
+Preprocessing       & Median imputation; log1p transformation on 10 monetary/count features;
+                      PCA retained 95\%+ variance in 6 components. \\
+Optimal $k$         & Elbow method suggested $k=4$; silhouette score peaked at $k=7$;
+                      $k=7$ selected. \\
+Segmentation        & K-Means outperformed GMM (silhouette 0.4477 vs.\ 0.3259);
+                      seven well-separated clusters identified. \\
+Visualisation       & t-SNE, radar charts, and heatmaps confirm distinct cluster fingerprints. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Phase 1 --- Data Exploration \& Preprocessing}
+
+\subsection{Dataset Overview}
+
+The dataset contains \textbf{8{,}950 credit card customers} and \textbf{18 columns}
+(one customer identifier + 17 numeric behavioural features). The features capture
+six behavioural dimensions:
+
+\begin{itemize}[noitemsep]
+  \item \textbf{Balance behaviour:} \texttt{BALANCE}, \texttt{BALANCE\_FREQUENCY}
+  \item \textbf{Purchase behaviour:} \texttt{PURCHASES}, \texttt{ONEOFF\_PURCHASES},
+        \texttt{INSTALLMENTS\_PURCHASES}, \texttt{PURCHASES\_FREQUENCY},
+        \texttt{ONEOFF\_PURCHASES\_FREQUENCY}, \texttt{PURCHASES\_INSTALLMENTS\_FREQUENCY},
+        \texttt{PURCHASES\_TRX}
+  \item \textbf{Cash advance behaviour:} \texttt{CASH\_ADVANCE}, \texttt{CASH\_ADVANCE\_FREQUENCY},
+        \texttt{CASH\_ADVANCE\_TRX}
+  \item \textbf{Credit \& payments:} \texttt{CREDIT\_LIMIT}, \texttt{PAYMENTS},
+        \texttt{MINIMUM\_PAYMENTS}, \texttt{PRC\_FULL\_PAYMENT}
+  \item \textbf{Tenure:} \texttt{TENURE}
+\end{itemize}
+
+\subsection{Missing Values}
+
+\begin{figure}[h!]
+  \centering
+  \includegraphics[width=0.65\textwidth]{fig01_missing_values.png}
+  \caption{Count of missing values per feature.}
+  \label{fig:missing}
+\end{figure}
+
+Only two features contain missing values:
+
+\begin{center}
+\begin{tabular}{lrr}
+\toprule
+\textbf{Feature} & \textbf{Missing Count} & \textbf{Missing \%} \\
+\midrule
+\texttt{CREDIT\_LIMIT}     & 1   & 0.01\% \\
+\texttt{MINIMUM\_PAYMENTS} & 313 & 3.50\% \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{insightbox}
+\textbf{Business Insight:} Both features are right-skewed monetary amounts. Median
+imputation was applied rather than mean imputation to avoid inflating values and
+introducing bias into the cluster centroids. The \texttt{CUST\_ID} column was
+dropped before any modelling as it carries no behavioural information.
+\end{insightbox}
+
+\subsection{Feature Distributions \& Skewness}
+
+\begin{figure}[h!]
+  \centering
+  \includegraphics[width=\textwidth]{fig02_feature_distributions.png}
+  \caption{Raw distributions of all 17 numeric features before transformation.}
+  \label{fig:distributions}
+\end{figure}
+
+\begin{figure}[h!]
+  \centering
+  \includegraphics[width=\textwidth]{fig15_skewness.png}
+  \caption{Skewness of each feature (red bars: $|\text{skew}|>1$).}
+  \label{fig:skewness}
+\end{figure}
+
+Skewness analysis reveals that \textbf{15 out of 17 features} have $|\text{skew}|>1$.
+The most extreme cases are:
+
+\begin{center}
+\begin{tabular}{lr}
+\toprule
+\textbf{Feature} & \textbf{Skewness} \\
+\midrule
+\texttt{MINIMUM\_PAYMENTS}       & 13.85 \\
+\texttt{ONEOFF\_PURCHASES}       & 10.05 \\
+\texttt{PURCHASES}               &  8.14 \\
+\texttt{INSTALLMENTS\_PURCHASES} &  7.30 \\
+\texttt{PAYMENTS}                &  5.91 \\
+\texttt{CASH\_ADVANCE\_TRX}      &  5.72 \\
+\texttt{CASH\_ADVANCE}           &  5.17 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{insightbox}
+\textbf{Business Insight:} Most customers carry moderate balances and purchase
+amounts, while a minority of high-value customers drives extreme values. This
+long right tail is characteristic of real-world financial data and motivates the
+use of a log transformation to compress outlier influence without discarding those
+customers entirely.
+\end{insightbox}
+
+\subsection{Correlation Analysis}
+
+\begin{figure}[h!]
+  \centering
+  \includegraphics[width=\textwidth]{fig03_correlation_heatmap.png}
+  \caption{Lower-triangular correlation heatmap of all numeric features.}
+  \label{fig:correlation}
+\end{figure}
+
+Key correlation findings:
+
+\begin{itemize}[noitemsep]
+  \item \texttt{PURCHASES} and \texttt{ONEOFF\_PURCHASES}: $r \approx 0.92$ --- one-off
+        purchases constitute the majority of total purchases for most customers.
+  \item \texttt{PURCHASES\_FREQUENCY} and \texttt{PURCHASES\_INSTALLMENTS\_FREQUENCY}:
+        $r \approx 0.86$ --- frequent purchasers tend to buy in instalments.
+  \item \texttt{CASH\_ADVANCE} and \texttt{CASH\_ADVANCE\_TRX}: $r \approx 0.91$ ---
+        higher cash-advance amounts correlate with higher transaction counts.
+\end{itemize}
+
+\begin{insightbox}
+\textbf{Business Insight:} High collinearity between purchase-related features adds
+redundant information to the feature space and can distort distance-based clustering.
+PCA (applied in Section~\ref{sec:pca}) collapses these correlated dimensions into
+fewer orthogonal components, improving cluster quality.
+\end{insightbox}
+
+\subsection{Outlier Detection}
+
+\begin{figure}[h!]
+  \centering
+  \includegraphics[width=\textwidth]{fig04_outlier_boxplots.png}
+  \caption{Box plots of monetary features showing extreme outliers.}
+  \label{fig:outliers}
+\end{figure}
+
+\begin{insightbox}
+\textbf{Business Insight:} Extreme outliers --- customers with \texttt{CASH\_ADVANCE}
+exceeding \$40{,}000 or \texttt{CREDIT\_LIMIT} up to \$30{,}000 --- represent real VIP
+and high-risk customer segments, not data errors. Removing them would eliminate entire
+behavioural groups. Log transformation compresses their scale while retaining them in
+the analysis.
+\end{insightbox}
+
+\subsection{Preprocessing --- Log$_{1}$p Transformation}
+
+\begin{figure}[h!]
+  \centering
+  \includegraphics[width=0.85\textwidth]{fig05_log_transform.png}
+  \caption{Effect of log$_{1}$p transformation on the \texttt{BALANCE} feature.}
+  \label{fig:logtransform}
+\end{figure}
+
+Log$_{1}$p ($\log(1+x)$) transformation was applied to the 10 most skewed
+monetary and count features:
+
+\begin{center}
+\texttt{BALANCE, PURCHASES, ONEOFF\_PURCHASES, INSTALLMENTS\_PURCHASES,}\\
+\texttt{CASH\_ADVANCE, CREDIT\_LIMIT, PAYMENTS, MINIMUM\_PAYMENTS,}\\
+\texttt{CASH\_ADVANCE\_TRX, PURCHASES\_TRX}
+\end{center}
+
+The $+1$ offset ensures safe handling of zero values (log(0) is undefined). No
+StandardScaler was applied because PCA is sensitive to variance, and preserving
+the relative scale differences between features carries meaningful behavioural
+information.
+
+\subsection{Dimensionality Reduction --- PCA}
+\label{sec:pca}
+
+\begin{figure}[h!]
+  \centering
+  \includegraphics[width=\textwidth]{fig06_pca_variance.png}
+  \caption{Scree plot (left) and cumulative explained variance (right) for PCA.}
+  \label{fig:pca}
+\end{figure}
+
+Principal Component Analysis was applied to the log-transformed feature matrix
+($8{,}950 \times 17$). \textbf{6 principal components} were sufficient to capture
+\textbf{95\% of the total variance}, reducing the feature dimensionality from 17
+to 6 while eliminating correlated noise. This compressed representation was used
+as input to all clustering algorithms.
+
+\section{Phase 2 --- Determining the Optimal Number of Clusters}
+
+To determine the optimal number of clusters, two complementary metrics were
+evaluated over $k \in \{2, 3, \ldots, 10\}$:
+
+\begin{itemize}[noitemsep]
+  \item \textbf{Elbow Method (Inertia):} Measures within-cluster sum of squared
+        distances. The ``elbow'' --- the point of diminishing returns --- indicates $k$.
+  \item \textbf{Silhouette Score:} Measures how similar each point is to its own
+        cluster compared to others ($-1$ to $+1$; higher is better).
+\end{itemize}
+
+\begin{figure}[h!]
+  \centering
+  \includegraphics[width=\textwidth]{fig07_elbow_silhouette.png}
+  \caption{Elbow curve (inertia) and silhouette scores across $k=2$ to $k=10$.}
+  \label{fig:elbow}
+\end{figure}
+
+\begin{center}
+\begin{tabular}{crr}
+\toprule
+$k$ & \textbf{Inertia} & \textbf{Silhouette Score} \\
+\midrule
+2  & 290{,}787 & 0.3706 \\
+3  & 214{,}367 & 0.3796 \\
+4  & 161{,}004 & 0.4010 \\
+5  & 131{,}575 & 0.4209 \\
+6  & 112{,}908 & 0.4313 \\
+\textbf{7}  & \textbf{101{,}037} & \textbf{0.4477} \\
+8  &  93{,}773 & 0.4061 \\
+9  &  87{,}372 & 0.3487 \\
+10 &  82{,}687 & 0.3355 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Decision justification:}
+\begin{itemize}[noitemsep]
+  \item The second derivative of the inertia curve peaks at $k=4$, indicating the
+        traditional elbow point.
+  \item The silhouette score peaks at $k=\mathbf{7}$ (0.4477) and drops sharply at
+        $k=8$.
+  \item $k=7$ was chosen because it maximises the silhouette score among the candidate
+        values ($\{4, 7\}$), indicating the most internally coherent and externally
+        well-separated clusters.
+\end{itemize}
+
+\begin{insightbox}
+\textbf{Business Insight:} While $k=4$ offers a simpler model, it merges customer
+groups with meaningfully different behaviours (e.g., cash-advance revolvers vs.\
+installment shoppers). $k=7$ provides sufficient granularity to design distinct
+marketing strategies for each segment without over-fragmenting the customer base.
+\end{insightbox}
+
+\section{Phase 3 --- Customer Segmentation}
+
+\subsection{Algorithm Selection: K-Means vs. GMM}
+
+Both K-Means and Gaussian Mixture Model (GMM) were trained with $k=7$ on the
+6-dimensional PCA-transformed data.
+
+\begin{figure}[h!]
+  \centering
+  \includegraphics[width=0.55\textwidth]{fig08_model_comparison.png}
+  \caption{Silhouette score comparison: K-Means vs. GMM at $k=7$.}
+  \label{fig:modelcomp}
+\end{figure}
+
+\begin{center}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Model} & \textbf{Silhouette Score} & \textbf{Selected?} \\
+\midrule
+K-Means ($k=7$) & \textbf{0.4477} & \checkmark \\
+GMM (full covariance, $k=7$) & 0.3259 & \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+K-Means was selected as the final model. This is consistent with the roughly
+spherical cluster shapes visible in the t-SNE projection (Figure~\ref{fig:tsne}),
+for which K-Means is well suited. GMM's flexibility in modelling elliptical shapes
+did not translate into better separability here because the PCA-compressed space
+already produces compact, isotropic clusters.
+
+\subsection{Cluster Profiles}
+
+The final K-Means model with $k=7$ assigns every customer to one of seven segments.
+Below is a detailed narrative profile of each segment.
+
+\paragraph{Cluster 0 --- Big Spenders / VIP (18.2\%, 1{,}633 customers)}
+The highest-purchasing segment with a mean of \$2{,}683 in purchases per period,
+the highest credit limits, and a notable 26\% full-payment rate. These customers
+shop frequently (purchase frequency 0.84) and split purchases across both one-off
+and instalment channels. They carry moderate balances and make substantial payments.
+
+\paragraph{Cluster 1 --- Cash-Only Dependents (23.1\%, 2{,}068 customers)}
+The largest and most at-risk segment. Mean purchases are effectively \$0 --- these
+customers never use the card for shopping. Instead they rely entirely on cash
+advances (\$1{,}994 mean), carry high balances (\$2{,}151), and have a near-zero
+full-payment rate (4\%). This is the bank's highest-risk concentration.
+
+\paragraph{Cluster 2 --- Installment Shoppers (21.2\%, 1{,}895 customers)}
+The most financially prudent segment. Low balances (\$365), zero cash-advance usage,
+and the highest full-payment rate (30\%). Purchases are moderate (\$499) and
+predominantly in instalments. This group presents the lowest credit risk.
+
+\paragraph{Cluster 3 --- High-Risk Heavy Users (10.5\%, 938 customers)}
+The most financially active and highest-risk group. Highest balances (\$2{,}932),
+highest cash advances (\$2{,}200), second-highest purchases (\$2{,}068), and highest
+credit limits (\$5{,}964). Near-zero full-payment rate (7\%). This segment generates
+maximum revenue but also maximum default risk.
+
+\paragraph{Cluster 4 --- One-off \& Cash Advance Revolvers (8.9\%, 798 customers)}
+Characterised by one-off purchase behaviour (frequency 0.28) combined with heavy
+cash advance usage (\$2{,}023). High balances (\$2{,}354) and low full-payment rates
+(5\%) indicate revolving debt. A hybrid risk profile.
+
+\paragraph{Cluster 5 --- One-off Shoppers (12.7\%, 1{,}138 customers)}
+Moderate activity with a focus on one-off purchases (\$836 mean, all one-off). No cash
+advance usage. Moderate balances (\$747) and a 14\% full-payment rate. A transitional
+segment with potential to migrate toward VIP behaviour.
+
+\paragraph{Cluster 6 --- Installment \& Cash Advance Revolvers (5.4\%, 480 customers)}
+The smallest and most complex segment. Combines instalment purchase habits (\$523
+mean, predominantly instalment) with significant cash advance usage (\$1{,}994).
+High balances (\$2{,}580) and near-zero full-payment rate (4\%) --- a financially
+stretched group.
+
+\section{Phase 4 --- Visualisation \& Analysis}
+
+\subsection{t-SNE 2D Cluster Projection}
+
+\begin{figure}[h!]
+  \centering
+  \includegraphics[width=\textwidth]{fig09_tsne.png}
+  \caption{t-SNE 2D projection of the 8{,}950 customers coloured by cluster assignment.}
+  \label{fig:tsne}
+\end{figure}
+
+t-SNE (t-Distributed Stochastic Neighbour Embedding) projects the 6-dimensional
+PCA space into 2D while preserving local neighbourhood structure. The seven clusters
+appear as clearly separated colour blobs with minimal overlap, which is consistent
+with a silhouette score of 0.4477.
+
+\begin{insightbox}
+\textbf{Business Insight:} The spatial separation confirms that the 7 groups are
+genuinely distinct in their financial behaviour --- not arbitrary partitions. Any
+overlap between adjacent clusters (e.g.\ C3 and C0) reflects customers who share
+partial behaviours such as high purchases in both groups, but differ in cash-advance
+usage.
+\end{insightbox}
+
+\subsection{Cluster Size Distribution}
+
+\begin{figure}[h!]
+  \centering
+  \includegraphics[width=0.85\textwidth]{fig10_cluster_sizes.png}
+  \caption{Number of customers per segment with percentage labels.}
+  \label{fig:sizes}
+\end{figure}
+
+\begin{insightbox}
+\textbf{Business Insight:} Cash-Only Dependents (C1) is the largest segment at 23.1\%
+--- representing the bank's greatest concentration of default risk in a single group.
+Installment \& Cash Advance Revolvers (C6) at only 5.4\% is the smallest but most
+financially complex segment, requiring specialised monitoring despite its small size.
+\end{insightbox}
+
+\subsection{Feature Distributions by Cluster}
+
+\begin{figure}[h!]
+  \centering
+  \includegraphics[width=\textwidth]{fig11_feature_by_cluster.png}
+  \caption{Overlaid histograms of 8 key features coloured by cluster.}
+  \label{fig:histbycluster}
+\end{figure}
+
+\begin{insightbox}
+\textbf{Business Insight:} \texttt{PURCHASES} and \texttt{CASH\_ADVANCE} provide the
+clearest cluster separation. C1 spikes at exactly zero for purchases, while C0 spreads
+far to the right. \texttt{TENURE} shows near-complete overlap across all clusters,
+confirming that account age carries no meaningful discriminatory power for segmentation.
+\end{insightbox}
+
+\subsection{Cluster Heatmap --- Mean Feature Values}
+
+\begin{figure}[h!]
+  \centering
+  \includegraphics[width=\textwidth]{fig12_cluster_heatmap.png}
+  \caption{Heatmap of normalised mean feature values per cluster. Raw means shown as
+           annotations.}
+  \label{fig:heatmap}
+\end{figure}
+
+\begin{insightbox}
+\textbf{Business Insight:} C3 (High-Risk Heavy Users) is the darkest row across
+\texttt{BALANCE}, \texttt{CASH\_ADVANCE}, and \texttt{PAYMENTS} simultaneously --- the
+most financially active and highest-risk segment. C2 (Installment Shoppers) is the
+lightest row overall --- lowest activity with zero cash-advance usage. The
+\texttt{PRC\_FULL\_PAYMENT} column is meaningfully above zero only for C2, confirming
+it is the only segment with a tendency to pay balances in full.
+\end{insightbox}
+
+\subsection{Radar Charts --- Cluster Fingerprints}
+
+\begin{figure}[h!]
+  \centering
+  \includegraphics[width=\textwidth]{fig13_radar_charts.png}
+  \caption{Normalised radar charts showing the behavioural profile of each cluster.}
+  \label{fig:radar}
+\end{figure}
+
+\begin{insightbox}
+\textbf{Business Insight:} C3 has the largest radar polygon, spiking simultaneously
+across \texttt{PURCHASES}, \texttt{CASH\_ADVANCE}, and \texttt{BALANCE} --- the only
+cluster combining all three risk dimensions. C1 has a highly asymmetric shape --- large
+only on \texttt{CASH\_ADVANCE} and \texttt{BALANCE}, completely flat on
+\texttt{PURCHASES}. C2 has the smallest polygon overall, reflecting the lowest financial
+activity across all features.
+\end{insightbox}
+
+\subsection{Box Plots --- Key Financial Features by Segment}
+
+\begin{figure}[h!]
+  \centering
+  \includegraphics[width=\textwidth]{fig14_boxplots.png}
+  \caption{Box plots (outliers hidden) of 8 key features disaggregated by cluster.}
+  \label{fig:boxplots}
+\end{figure}
+
+\begin{insightbox}
+\textbf{Business Insight:}
+\begin{itemize}[noitemsep]
+  \item \textbf{BALANCE} --- C3 and C6 have the highest and widest boxes, confirming heavy
+        debt carriers. C2 sits near zero with a narrow box.
+  \item \textbf{PURCHASES} --- C0 has the highest median; C1 has a flat box at zero ---
+        every customer in this segment truly never purchases.
+  \item \textbf{CASH\_ADVANCE} --- C1, C3, C4, C6 all have elevated boxes; C0 and C2 sit
+        at zero.
+  \item \textbf{CREDIT\_LIMIT} --- C0 and C3 have the highest limits, reflecting the bank
+        rewarding high spenders with more credit.
+  \item \textbf{PRC\_FULL\_PAYMENT} --- Almost all clusters are near zero; C2 is the only
+        segment with a visible upward spread.
+  \item \textbf{PURCHASES\_FREQUENCY} --- C0 is narrow and near 1.0 (buys every month);
+        C1 is flat at 0.0 (never buys). The sharpest contrast of all features.
+  \item \textbf{TENURE} --- All clusters have nearly identical boxes --- account age
+        provides no discriminatory value.
+\end{itemize}
+\end{insightbox}
+
+\section{Phase 5 --- Business Insights \& Strategic Recommendations}
+
+\subsection{Segment-Level Recommendations}
+
+\begin{longtable}{p{3.5cm} p{3cm} p{8cm}}
+\toprule
+\textbf{Segment} & \textbf{Business Priority} & \textbf{Recommended Actions} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Segment} & \textbf{Business Priority} & \textbf{Recommended Actions} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{3}{r}{\small\itshape Continued on next page\ldots}
+\endfoot
+\bottomrule
+\endlastfoot
+
+\textbf{C0 --- Big Spenders (VIP)}
+\newline (18.2\%)
+& Revenue maximisation
+& Cross-sell premium travel and lifestyle cards. Offer VIP concierge services, airport lounge access, and elevated reward multipliers. Maintain credit-limit headroom to enable continued high-spend behaviour. Monitor for competitor card switching. \\[4pt]
+
+\textbf{C1 --- Cash-Only Dependents}
+\newline (23.1\%)
+& Risk mitigation
+& Flag for proactive credit counselling. Offer personal loan products at lower interest rates than cash-advance fees as a debt-restructuring incentive. Set conservative credit-limit increase thresholds. Trigger alerts when cash-advance frequency rises. \\[4pt]
+
+\textbf{C2 --- Installment Shoppers}
+\newline (21.2\%)
+& Cross-sell \& activation
+& These low-risk customers are under-utilised. Offer instalment-specific promotional rates (e.g., 0\% instalment for 12 months). Upsell to premium card tiers. Target with partner merchant offers to increase purchase frequency. \\[4pt]
+
+\textbf{C3 --- High-Risk Heavy Users}
+\newline (10.5\%)
+& Dual-track: revenue + risk
+& Highest revenue potential but also highest default risk. Reward high spend with premium benefits while simultaneously stress-testing credit exposure. Implement early-warning delinquency models calibrated specifically to this segment. Limit unsolicited credit-limit increases. \\[4pt]
+
+\textbf{C4 --- One-off \& Cash Advance Revolvers}
+\newline (8.9\%)
+& Debt management
+& Offer structured repayment plans to reduce revolving cash-advance balances. Market balance-transfer promotions. Educate on the cost differential between purchase interest and cash-advance interest rates. \\[4pt]
+
+\textbf{C5 --- One-off Shoppers}
+\newline (12.7\%)
+& Engagement \& migration
+& Activate with bonus rewards on one-off spend categories (e.g., dining, travel). Introduce instalment features to convert single large purchases into recurring instalment transactions, deepening engagement. Migrate aspirational customers toward VIP tier. \\[4pt]
+
+\textbf{C6 --- Installment \& Cash Advance Revolvers}
+\newline (5.4\%)
+& Specialist risk monitoring
+& Despite small size, this segment's combined instalment and cash-advance usage creates complex credit exposure. Assign dedicated relationship managers. Offer debt consolidation products. Apply stricter credit review cycles. \\[4pt]
+\end{longtable}
+
+\subsection{Portfolio-Level Insights}
+
+\begin{enumerate}
+  \item \textbf{Risk concentration:} 44.9\% of customers (C1 + C3 + C6) carry high
+        balances combined with heavy cash-advance reliance and near-zero full-payment
+        rates. This is the primary default-risk concentration in the portfolio.
+
+  \item \textbf{Revenue concentration:} 28.7\% of customers (C0 + C3) generate the
+        highest payment and purchase volumes. Retaining these customers and expanding
+        their credit products is the primary revenue-protection priority.
+
+  \item \textbf{Under-leveraged segment:} C2 Installment Shoppers (21.2\%) are the
+        safest customers yet have the lowest credit limits and lowest utilisation. They
+        represent the greatest opportunity for risk-free credit expansion.
+
+  \item \textbf{Tenure is irrelevant:} Account age does not differentiate customer
+        behaviour. Loyalty programmes should be behaviour-based (spend patterns, payment
+        discipline) rather than tenure-based.
+
+  \item \textbf{Two-dimensional risk model:} The clearest risk stratification comes from
+        combining \texttt{CASH\_ADVANCE} (liquidity stress indicator) with
+        \texttt{PRC\_FULL\_PAYMENT} (repayment discipline indicator). Customers high on
+        the former and low on the latter form the highest-risk cohort (C1, C3, C6).
+\end{enumerate}
+
+\section{Summary of Findings}
+
+\begin{center}
+\begin{tabular}{lp{10cm}}
+\toprule
+\textbf{Metric} & \textbf{Value / Outcome} \\
+\midrule
+Dataset size               & 8{,}950 customers, 17 behavioural features \\
+Missing values             & 2 features; median-imputed \\
+Preprocessing              & Log$_{1}$p on 10 features; PCA to 6 components (95\% variance) \\
+Optimal $k$                & 7 (silhouette 0.4477, elbow at 4) \\
+Best model                 & K-Means (silhouette 0.4477 vs GMM 0.3259) \\
+Cluster count              & 7 distinct segments \\
+Largest segment            & C1 Cash-Only Dependents (23.1\%) \\
+Highest-risk segment       & C3 High-Risk Heavy Users + C1 Cash-Only Dependents \\
+Highest-revenue segment    & C0 Big Spenders (VIP) + C3 High-Risk Heavy Users \\
+Safest segment             & C2 Installment Shoppers (30\% full-payment rate) \\
+Key discriminators         & PURCHASES, CASH\_ADVANCE, PRC\_FULL\_PAYMENT, PURCHASES\_FREQUENCY \\
+Non-discriminating feature & TENURE (identical distribution across all clusters) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\end{document}
