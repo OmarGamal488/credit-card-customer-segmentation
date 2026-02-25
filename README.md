@@ -18,7 +18,6 @@ Key feature groups: balance behaviour, purchase behaviour (one-off & instalment)
 .
 ├── CC GENERAL.csv                  # Raw dataset
 ├── customer_segmentation.ipynb     # Main analysis notebook
-├── generate_figures.py             # Script to reproduce all figures
 ├── OmarGamalElKady_MachineLearning2_Report.tex   # Full LaTeX report source
 ├── OmarGamalElKady_MachineLearning2_Report.pdf   # Compiled report (16 pages)
 ├── figures/                        # Generated PNG figures (fig01–fig15)
